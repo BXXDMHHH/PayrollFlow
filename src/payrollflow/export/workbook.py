@@ -76,7 +76,7 @@ def _source_metadata(input_files: Mapping[str, Any] | None) -> list[tuple[str, s
     return rows
 
 
-def _write_frame(ws, frame: pd.DataFrame) -> None:
+def _write_frame(ws, frame: pd.DataFrame, decimal_places: int = 2) -> None:
     ws.append([str(column) for column in frame.columns])
     for values in frame.itertuples(index=False, name=None):
         excel_values = []
@@ -87,7 +87,7 @@ def _write_frame(ws, frame: pd.DataFrame) -> None:
                 money_columns.append(index)
         ws.append(excel_values)
         for index in money_columns:
-            ws.cell(row=ws.max_row, column=index).number_format = MONEY_FORMAT
+            ws.cell(row=ws.max_row, column=index).number_format = ('#,##0' if decimal_places == 0 else '#,##0.' + '0' * decimal_places) + ';[Red]-' + ('#,##0' if decimal_places == 0 else '#,##0.' + '0' * decimal_places)
 
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
@@ -234,10 +234,35 @@ def _verify(path: Path, salary: pd.DataFrame, details: pd.DataFrame,
         ) for row in detail_rows]
         if actual != expected:
             raise ExportError("计算明细与计算引擎轨迹不一致")
+        for row_number, (actual_row, (_, expected_row)) in enumerate(
+            zip(detail_rows, details.iterrows()), start=2
+        ):
+            for column_name, expected_value in expected_row.items():
+                actual_value = actual_row[detail_indexes[column_name]]
+                if str(actual_value) != str(expected_value):
+                    raise ExportError(
+                        f"计算明细内容不一致：第 {row_number} 行 {column_name}"
+                    )
 
-        exception_rows = list(book["异常报告"].iter_rows(min_row=2, values_only=True))
+        exception_ws = book["异常报告"]
+        exception_rows = list(exception_ws.iter_rows(min_row=2, values_only=True))
         if len(exception_rows) != len(exceptions):
             raise ExportError("异常报告条数与数据校验报告不一致")
+        exception_headers = [cell.value for cell in next(
+            exception_ws.iter_rows(min_row=1, max_row=1)
+        )]
+        for row_number, (actual_row, (_, expected_row)) in enumerate(
+            zip(exception_rows, exceptions.iterrows()), start=2
+        ):
+            for column_index, column_name in enumerate(exception_headers):
+                expected_value = _excel_value(expected_row[column_name])
+                actual_value = actual_row[column_index]
+                if (None if actual_value is None else str(actual_value)) != (
+                    None if expected_value is None else str(expected_value)
+                ):
+                    raise ExportError(
+                        f"异常报告内容不一致：第 {row_number} 行 {column_name}"
+                    )
     finally:
         book.close()
 
@@ -272,7 +297,7 @@ def export_payroll_workbook(
         ("工资表", salary), ("计算明细", details),
         ("异常报告", exceptions), ("核算信息", metadata),
     ):
-        _write_frame(book.create_sheet(name), frame)
+        _write_frame(book.create_sheet(name), frame, calculation_result.decimal_places)
 
     temp_path = None
     try:
