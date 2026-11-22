@@ -244,6 +244,7 @@ def validate_and_reconcile(
             ))
 
     merged = safe_master
+    missing_policies = validation.get("missing_row_policy", {})
     for file_type in ("attendance", "bonus", "previous_payroll"):
         if file_type not in inputs:
             continue
@@ -263,32 +264,46 @@ def validate_and_reconcile(
         present = merged[marker].fillna(False)
         if file_type == "attendance":
             missing_attendance = merged.loc[~present, key].astype(str).tolist()
-            for employee_id in missing_attendance:
-                issues.append(ValidationIssue(
-                    code="ATTENDANCE_RECORD_MISSING",
-                    severity="blocking",
-                    file_type="attendance",
-                    employee_id=employee_id,
-                    message=f"员工 {employee_id} 缺少本月考勤记录，不能进入正常核算",
-                ))
+            severity = missing_policies.get(file_type, "blocking")
+            if severity in {"blocking", "warning"}:
+                for employee_id in missing_attendance:
+                    issues.append(ValidationIssue(
+                        code="ATTENDANCE_RECORD_MISSING",
+                        severity=severity,
+                        file_type="attendance",
+                        employee_id=employee_id,
+                        message=f"员工 {employee_id} 缺少本月考勤记录，不能进入正常核算",
+                    ))
         elif file_type == "bonus":
             # No bonus row means no bonus this month. A present row with a blank
             # required amount is still a blocking required-field issue.
-            for field in files[file_type].get("columns", {}).values():
-                if field == key or field not in merged.columns:
-                    continue
-                merged.loc[~present, field] = Decimal("0")
+            policy = missing_policies.get(file_type, "zero")
+            if policy == "zero":
+                for field in files[file_type].get("columns", {}).values():
+                    if field == key or field not in merged.columns:
+                        continue
+                    merged.loc[~present, field] = Decimal("0")
+            elif policy in {"blocking", "warning"}:
+                for employee_id in merged.loc[~present, key].astype(str).tolist():
+                    issues.append(ValidationIssue(
+                        code="BONUS_RECORD_MISSING",
+                        severity=policy,
+                        file_type="bonus",
+                        employee_id=employee_id,
+                        message=f"员工 {employee_id} 缺少奖金补贴记录",
+                    ))
         elif file_type == "previous_payroll":
             missing_previous = merged.loc[~present, key].astype(str).tolist()
-            severity = validation.get("missing_employee_record_severity", {}).get(file_type, "warning")
-            for employee_id in missing_previous:
-                issues.append(ValidationIssue(
-                    code="PREVIOUS_PAYROLL_RECORD_MISSING",
-                    severity=severity,
-                    file_type=file_type,
-                    employee_id=employee_id,
-                    message=f"员工 {employee_id} 缺少上期工资记录；可能为新员工，请核对历史数据",
-                ))
+            severity = missing_policies.get(file_type, "warning")
+            if severity in {"blocking", "warning"}:
+                for employee_id in missing_previous:
+                    issues.append(ValidationIssue(
+                        code="PREVIOUS_PAYROLL_RECORD_MISSING",
+                        severity=severity,
+                        file_type=file_type,
+                        employee_id=employee_id,
+                        message=f"员工 {employee_id} 缺少上期工资记录；可能为新员工，请核对历史数据",
+                    ))
         merged.drop(columns=[marker], inplace=True, errors="ignore")
 
     report = ValidationReport(tuple(issues), len(safe_master.index))

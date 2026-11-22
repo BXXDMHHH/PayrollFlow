@@ -62,18 +62,30 @@
   },
   "validation": {
     "required_fields": {
-      "employees": ["employee_id", "employee_name", "base_salary_demo"],
-      "attendance": ["employee_id", "attendance_days_demo", "absence_days_demo"],
-      "bonus": ["employee_id", "bonus_demo", "allowance_demo"],
-      "previous_payroll": ["employee_id", "bonus_accumulated_demo"]
+      "employees": [
+        "employee_id",
+        "employee_name",
+        "base_salary_demo"
+      ],
+      "attendance": [
+        "employee_id",
+        "attendance_days_demo",
+        "absence_days_demo"
+      ],
+      "bonus": [
+        "employee_id",
+        "bonus_demo",
+        "allowance_demo"
+      ],
+      "previous_payroll": [
+        "employee_id",
+        "bonus_accumulated_demo"
+      ]
     },
     "unknown_employee_severity": {
       "attendance": "blocking",
       "bonus": "blocking",
       "previous_payroll": "blocking"
-    },
-    "missing_employee_record_severity": {
-      "previous_payroll": "warning"
     },
     "missing_row_policy": {
       "attendance": "blocking",
