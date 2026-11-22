@@ -1,0 +1,9 @@
+{
+  "version": "demo-only-0.1.0",
+  "status": "SIMULATION_ONLY_NOT_FOR_REAL_PAYROLL",
+  "warning": "以下仅为阶段 0 的配置结构占位，不实现也不代表真实工资公式。正式规则必须由会计/业务负责人确认。",
+  "currency": "CNY_DEMO",
+  "decimal_places": 2,
+  "rounding": "ROUND_HALF_UP_DEMO",
+  "rules": []
+}

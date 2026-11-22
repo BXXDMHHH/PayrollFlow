@@ -1,0 +1,43 @@
+{
+  "version": "0.1.0-demo",
+  "description": "字段映射示例；实际 Excel 模板和字段含义待业务方确认。",
+  "employee_key": "employee_id",
+  "files": {
+    "employees": {
+      "example_filename": "employees.xlsx",
+      "worksheet": "员工信息",
+      "columns": {
+        "工号": "employee_id",
+        "姓名": "employee_name",
+        "部门": "department",
+        "基本工资（模拟）": "base_salary_demo"
+      }
+    },
+    "attendance": {
+      "example_filename": "attendance.xlsx",
+      "worksheet": "考勤",
+      "columns": {
+        "工号": "employee_id",
+        "出勤天数（模拟）": "attendance_days_demo",
+        "缺勤天数（模拟）": "absence_days_demo"
+      }
+    },
+    "bonus": {
+      "example_filename": "bonus.xlsx",
+      "worksheet": "奖金补贴",
+      "columns": {
+        "工号": "employee_id",
+        "奖金（模拟）": "bonus_demo",
+        "补贴（模拟）": "allowance_demo"
+      }
+    },
+    "previous_payroll": {
+      "example_filename": "previous_payroll.xlsx",
+      "worksheet": "上期工资",
+      "columns": {
+        "工号": "employee_id",
+        "累计奖金（模拟）": "bonus_accumulated_demo"
+      }
+    }
+  }
+}

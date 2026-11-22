@@ -1,0 +1,10 @@
+{
+  "app_name": "PayrollFlow",
+  "environment": "local",
+  "log_level": "INFO",
+  "sample_data_directory": "data/sample",
+  "input_directory": "data/input",
+  "history_directory": "data/history",
+  "output_directory": "output",
+  "warning": "本配置仅定义工程运行参数，不包含真实工资业务规则。"
+}
