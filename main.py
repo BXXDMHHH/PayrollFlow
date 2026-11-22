@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+from datetime import date
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -9,9 +10,10 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from payrollflow.calculation import calculate_payroll  # noqa: E402
 from payrollflow.config import validate_project_config  # noqa: E402
+from payrollflow.export import export_payroll_workbook  # noqa: E402
 from payrollflow.ingestion import load_all_inputs  # noqa: E402
 from payrollflow.logging_config import configure_logging  # noqa: E402
-from payrollflow.paths import CONFIG_DIR, SAMPLE_DATA_DIR, ensure_runtime_directories  # noqa: E402
+from payrollflow.paths import CONFIG_DIR, OUTPUT_DIR, SAMPLE_DATA_DIR, ensure_runtime_directories  # noqa: E402
 from payrollflow.validation import validate_and_reconcile  # noqa: E402
 
 
@@ -41,6 +43,10 @@ def main() -> int:
     parser.add_argument("--validate-samples", action="store_true", help="校验标准模拟 Excel")
     parser.add_argument("--calculate-inputs", type=Path, metavar="目录", help="校验并计算指定目录中的数据")
     parser.add_argument("--calculate-samples", action="store_true", help="校验并计算标准模拟 Excel")
+    parser.add_argument("--export-inputs", type=Path, metavar="目录", help="校验、计算并导出指定目录中的工资结果")
+    parser.add_argument("--export-samples", action="store_true", help="校验、计算并导出标准模拟工资结果")
+    parser.add_argument("--period", default=date.today().strftime("%Y-%m"), help="核算月份，格式 YYYY-MM")
+    parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR, help="Excel 导出目录")
     parser.add_argument("--rules", type=Path, default=CONFIG_DIR / "payroll_rules.example.json", help="工资规则 JSON 路径")
     args = parser.parse_args()
 
@@ -48,22 +54,27 @@ def main() -> int:
         args.read_inputs is not None, args.read_samples,
         args.validate_inputs is not None, args.validate_samples,
         args.calculate_inputs is not None, args.calculate_samples,
+        args.export_inputs is not None, args.export_samples,
     ])
     if selected > 1:
-        parser.error("读取、校验和计算参数一次只能指定一种")
+        parser.error("读取、校验、计算和导出参数一次只能指定一种")
 
     ensure_runtime_directories()
     logger = configure_logging()
     try:
         configs = validate_project_config()
-        if args.calculate_samples or args.calculate_inputs is not None:
-            input_dir = args.calculate_inputs or (SAMPLE_DATA_DIR / "standard")
+        calculate_requested = (
+            args.calculate_samples or args.calculate_inputs is not None
+            or args.export_samples or args.export_inputs is not None
+        )
+        if calculate_requested:
+            input_dir = args.calculate_inputs or args.export_inputs or (SAMPLE_DATA_DIR / "standard")
             inputs = load_all_inputs(input_dir, collect_errors=True)
             reconciled = validate_and_reconcile(inputs)
             print(f"数据校验完成：{input_dir}")
             _print_validation_report(reconciled)
             if not reconciled.report.can_calculate:
-                print("存在阻断性异常，已拒绝执行工资计算。")
+                print("存在阻断性异常，已拒绝执行工资计算和导出。")
                 return 2
             result = calculate_payroll(
                 reconciled.employees,
@@ -75,6 +86,12 @@ def main() -> int:
             print("\n计算结果：")
             print(result.results.to_string(index=False))
             print(f"计算过程记录：{len(result.traces)} 条规则执行明细")
+            if args.export_samples or args.export_inputs is not None:
+                path = export_payroll_workbook(
+                    reconciled.employees, result, reconciled.report,
+                    period=args.period, input_files=inputs, output_dir=args.output_dir,
+                )
+                print(f"Excel 已导出并通过回读校验：{path}")
             print("注意：当前规则为模拟规则，不可用于真实发薪。")
             return 0
         if args.validate_samples or args.validate_inputs is not None:
@@ -99,6 +116,7 @@ def main() -> int:
             print("生成模拟 Excel：python scripts/generate_sample_data.py")
             print("校验模拟数据：python main.py --validate-samples")
             print("计算模拟数据：python main.py --calculate-samples")
+            print("导出模拟工资表：python main.py --export-samples --period 2026-11")
             print("当前版本仅支持模拟规则，请勿用于真实发薪。")
     except Exception as exc:
         logger.exception("PayrollFlow 执行失败")

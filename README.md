@@ -2,7 +2,7 @@
 
 PayrollFlow 是一个面向中小企业、Windows 本地运行的工资核算自动化工具。V1.0 产品范围和验收标准见 PRD.md，AI 开发约束见 AGENTS.md。
 
-> 当前进度：已实现 Excel 接入、数据关联与异常校验，以及受限 JSON 规则驱动的模拟计算引擎。当前工资规则明确标记为模拟用途，不能用于真实工资核算或发薪。工资计算结果尚未持久化，计算明细暂时在内存中生成。
+> 当前进度：已实现 Excel 接入、数据关联与异常校验、受限 JSON 规则驱动的模拟计算引擎，以及四工作表 Excel 导出和导出后回读校验。当前工资规则明确标记为模拟用途，不能用于真实工资核算或发薪。历史期间管理尚未实现。
 
 ## 环境与安装
 
@@ -94,3 +94,21 @@ pytest
 - `data/input`、`data/history`、`data/database`、`output`、`logs` 和本地数据库均属于运行数据，不应提交。
 - 原始工资 Excel 只读处理。
 - `config/payroll_rules.example.json` 明确为模拟规则，不能用于真实发薪。
+
+
+## Excel 结果导出（阶段四）
+
+使用标准模拟数据生成四张工作表的工资核算文件：
+
+```powershell
+python scripts/generate_sample_data.py
+python main.py --export-samples --period 2026-11
+```
+
+默认输出到项目根目录的 `output/2026-11_工资核算结果.xlsx`。指定自己的输入目录和输出目录：
+
+```powershell
+python main.py --export-inputs "D:\PayrollFlow\monthly_input" --period 2026-11 --output-dir "D:\PayrollFlow\output"
+```
+
+工作簿包含“工资表”“计算明细”“异常报告”“核算信息”。导出采用临时文件写入，重新打开并核对工作表、员工人数/工号、计算项目金额和汇总、计算轨迹及异常条数后，才发布为目标文件。存在阻断性异常时拒绝计算和导出。当前导出数据仍来自模拟规则，不可用于真实发薪。
