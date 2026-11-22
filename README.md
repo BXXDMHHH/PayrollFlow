@@ -171,7 +171,14 @@ python -m streamlit run app.py --server.address 127.0.0.1
 http://127.0.0.1:8501
 ```
 
-默认仅监听本机回环地址，不向局域网开放。
+默认仅监听本机回环地址，不向局域网开放。默认使用 `data/database/payrollflow.sqlite3`；如需使用独立验收账本，可在启动前设置环境变量：
+
+```powershell
+$env:PAYROLLFLOW_HISTORY_DB = "data/database/phase6_acceptance.sqlite3"
+python -m streamlit run app.py --server.address 127.0.0.1
+```
+
+该设置仅影响本次进程，不会修改既有历史账本。
 
 ### 本期核算
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -348,7 +349,8 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
-    store = HistoryStore()
+    database_path = os.environ.get("PAYROLLFLOW_HISTORY_DB")
+    store = HistoryStore(database_path) if database_path else HistoryStore()
     st.sidebar.title("PayrollFlow")
     st.sidebar.caption("本地工资核算工作台")
     page = st.sidebar.radio("功能导航", ["本期核算", "历史期间"])
