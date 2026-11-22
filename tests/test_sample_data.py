@@ -19,3 +19,5 @@ def test_generator_creates_four_standard_files_and_edge_cases(tmp_path: Path) ->
     assert {"重复工号", "空工号", "无法匹配", "格式错误", "缺失字段"}.issubset(
         set(edge_cases["场景"])
     )
+    assert "not-a-number" in edge_cases["金额字段（测试）"].tolist()
+    assert edge_cases.loc[edge_cases["场景"] == "缺失字段", "金额字段（测试）"].isna().all()
