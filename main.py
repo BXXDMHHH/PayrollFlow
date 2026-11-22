@@ -1,9 +1,12 @@
-"""Command-line entry point for PayrollFlow checks, validation and demo calculation."""
+"""Command-line entry point for PayrollFlow."""
 
 import argparse
+import json
 import sys
 from datetime import date
 from pathlib import Path
+
+import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -11,6 +14,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from payrollflow.calculation import calculate_payroll  # noqa: E402
 from payrollflow.config import validate_project_config  # noqa: E402
 from payrollflow.export import export_payroll_workbook  # noqa: E402
+from payrollflow.history import HistoryStore  # noqa: E402
+from payrollflow.history.integration import apply_confirmed_history  # noqa: E402
 from payrollflow.ingestion import load_all_inputs  # noqa: E402
 from payrollflow.logging_config import configure_logging  # noqa: E402
 from payrollflow.paths import CONFIG_DIR, OUTPUT_DIR, SAMPLE_DATA_DIR, ensure_runtime_directories  # noqa: E402
@@ -48,6 +53,18 @@ def main() -> int:
     parser.add_argument("--period", default=date.today().strftime("%Y-%m"), help="核算月份，格式 YYYY-MM")
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR, help="Excel 导出目录")
     parser.add_argument("--rules", type=Path, default=CONFIG_DIR / "payroll_rules.example.json", help="工资规则 JSON 路径")
+    parser.add_argument("--history-db", type=Path, default=None, help="SQLite 历史账本路径")
+
+    period_run = parser.add_mutually_exclusive_group()
+    period_run.add_argument("--run-period-samples", action="store_true", help="使用模拟 Excel 完成一个期间核算并保存草稿")
+    period_run.add_argument("--run-period-inputs", type=Path, metavar="目录", help="使用指定 Excel 完成一个期间核算并保存草稿")
+
+    history_action = parser.add_mutually_exclusive_group()
+    history_action.add_argument("--history-list", action="store_true", help="列出历史核算期间")
+    history_action.add_argument("--history-create", metavar="YYYY-MM", help="创建草稿核算期间")
+    history_action.add_argument("--history-show", metavar="YYYY-MM", help="查看核算期间及输入关联")
+    history_action.add_argument("--history-review", metavar="YYYY-MM", help="将草稿提交待审核")
+    history_action.add_argument("--history-confirm", metavar="YYYY-MM", help="确认待审核期间")
     args = parser.parse_args()
 
     selected = sum([
@@ -55,14 +72,83 @@ def main() -> int:
         args.validate_inputs is not None, args.validate_samples,
         args.calculate_inputs is not None, args.calculate_samples,
         args.export_inputs is not None, args.export_samples,
+        args.run_period_samples, args.run_period_inputs is not None,
+        args.history_list, args.history_create is not None, args.history_show is not None,
+        args.history_review is not None, args.history_confirm is not None,
     ])
     if selected > 1:
-        parser.error("读取、校验、计算和导出参数一次只能指定一种")
+        parser.error("一次只能执行一种读取、校验、计算、导出或历史管理操作")
 
     ensure_runtime_directories()
     logger = configure_logging()
     try:
         configs = validate_project_config()
+        history_store = HistoryStore(args.history_db)
+
+        if args.history_list:
+            periods = history_store.list_periods()
+            print(pd.DataFrame(periods).to_string(index=False) if periods else "暂无历史核算期间。")
+            return 0
+        if args.history_create:
+            record = history_store.create_period(args.history_create)
+            print(f"核算期间已创建/已存在：{record['period']}，状态：{record['status']}")
+            return 0
+        if args.history_show:
+            record = history_store.get_period(args.history_show)
+            if record is None:
+                print(f"核算期间不存在：{args.history_show}")
+                return 2
+            print(json.dumps(record, ensure_ascii=False, indent=2, default=str))
+            print("状态变更记录：")
+            print(json.dumps(history_store.get_events(args.history_show), ensure_ascii=False, indent=2))
+            return 0
+        if args.history_review:
+            history_store.submit_for_review(args.history_review)
+            print(f"{args.history_review} 已提交审核。")
+            return 0
+        if args.history_confirm:
+            history_store.confirm(args.history_confirm)
+            print(f"{args.history_confirm} 已确认，后续期间可读取其历史累计数据。")
+            return 0
+
+        if args.run_period_samples or args.run_period_inputs is not None:
+            input_dir = args.run_period_inputs or (SAMPLE_DATA_DIR / "standard")
+            period_record = history_store.create_period(args.period)
+            if period_record["status"] == "confirmed":
+                raise ValueError(
+                    f"核算期间 {args.period} 已确认，普通核算不能覆盖；如需更正请使用明确的更正流程。"
+                )
+            raw_inputs = load_all_inputs(input_dir, collect_errors=True)
+            inputs = apply_confirmed_history(
+                raw_inputs, period=args.period, history_store=history_store,
+                rules_config=args.rules,
+            )
+            reconciled = validate_and_reconcile(inputs)
+            print(f"核算期间：{args.period}；数据来源：{input_dir}")
+            _print_validation_report(reconciled)
+            if not reconciled.report.can_calculate:
+                print("存在阻断性异常，期间保留为草稿，拒绝计算。")
+                return 2
+            result = calculate_payroll(
+                reconciled.employees, config=args.rules,
+                validation_report=reconciled.report,
+            )
+            path = export_payroll_workbook(
+                reconciled.employees, result, reconciled.report,
+                period=args.period, input_files=inputs, output_dir=args.output_dir,
+            )
+            history_store.save_calculation(
+                args.period, reconciled.employees, result, reconciled.report,
+                input_files=inputs, workbook_path=path,
+            )
+            print(f"工资结果已计算并保存：{path}")
+            print(f"历史账本：{history_store.database_path}")
+            print("当前状态：草稿。核对后执行：")
+            print(f"python main.py --history-review {args.period}")
+            print(f"python main.py --history-confirm {args.period}")
+            print("注意：当前规则为模拟规则，不可用于真实发薪。")
+            return 0
+
         calculate_requested = (
             args.calculate_samples or args.calculate_inputs is not None
             or args.export_samples or args.export_inputs is not None
@@ -77,8 +163,7 @@ def main() -> int:
                 print("存在阻断性异常，已拒绝执行工资计算和导出。")
                 return 2
             result = calculate_payroll(
-                reconciled.employees,
-                config=args.rules,
+                reconciled.employees, config=args.rules,
                 validation_report=reconciled.report,
             )
             print(f"规则版本：{result.rule_version}")
@@ -94,12 +179,14 @@ def main() -> int:
                 print(f"Excel 已导出并通过回读校验：{path}")
             print("注意：当前规则为模拟规则，不可用于真实发薪。")
             return 0
+
         if args.validate_samples or args.validate_inputs is not None:
             input_dir = args.validate_inputs or (SAMPLE_DATA_DIR / "standard")
             result = validate_and_reconcile(load_all_inputs(input_dir, collect_errors=True))
             print(f"数据校验完成：{input_dir}")
             _print_validation_report(result)
             return 0 if result.report.can_calculate else 2
+
         if args.read_samples or args.read_inputs is not None:
             input_dir = args.read_inputs or (SAMPLE_DATA_DIR / "standard")
             results = load_all_inputs(input_dir)
@@ -117,6 +204,8 @@ def main() -> int:
             print("校验模拟数据：python main.py --validate-samples")
             print("计算模拟数据：python main.py --calculate-samples")
             print("导出模拟工资表：python main.py --export-samples --period 2026-11")
+            print("按期间核算：python main.py --run-period-samples --period 2026-11")
+            print("查看历史期间：python main.py --history-list")
             print("当前版本仅支持模拟规则，请勿用于真实发薪。")
     except Exception as exc:
         logger.exception("PayrollFlow 执行失败")

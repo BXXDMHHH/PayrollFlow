@@ -2,7 +2,7 @@
 
 PayrollFlow 是一个面向中小企业、Windows 本地运行的工资核算自动化工具。V1.0 产品范围和验收标准见 PRD.md，AI 开发约束见 AGENTS.md。
 
-> 当前进度：已实现 Excel 接入、数据关联与异常校验、受限 JSON 规则驱动的模拟计算引擎，以及四工作表 Excel 导出和导出后回读校验。当前工资规则明确标记为模拟用途，不能用于真实工资核算或发薪。历史期间管理尚未实现。
+> 当前进度：已实现 Excel 接入、数据关联与异常校验、受限 JSON 规则驱动的模拟计算引擎，以及四工作表 Excel 导出和导出后回读校验。当前工资规则明确标记为模拟用途，不能用于真实工资核算或发薪。历史期间管理已实现代码，当前待本地验收。
 
 ## 环境与安装
 
@@ -112,3 +112,42 @@ python main.py --export-inputs "D:\PayrollFlow\monthly_input" --period 2026-11 -
 ```
 
 工作簿包含“工资表”“计算明细”“异常报告”“核算信息”。导出采用临时文件写入，重新打开并核对工作表、员工人数/工号、计算项目金额和汇总、计算轨迹及异常条数后，才发布为目标文件。存在阻断性异常时拒绝计算和导出。当前导出数据仍来自模拟规则，不可用于真实发薪。
+
+
+## 历史期间管理（阶段五）
+
+阶段五使用 Python 内置 SQLite 保存本地核算账本，默认数据库为 `data/database/payrollflow.sqlite3`。数据库和工资业务数据均为本机运行数据，不应提交到 Git。
+
+### 按期间完成一次核算
+
+```powershell
+python scripts/generate_sample_data.py
+python main.py --run-period-samples --period 2026-11
+```
+
+该命令会创建或复用对应期间的草稿，读取 Excel、校验并计算，生成四工作表 Excel，然后将员工结果、计算轨迹、规则版本、输入文件名/工作表/SHA-256、异常报告及导出路径保存到 SQLite。若上一自然月已确认，程序会以该期确认结果替代本期输入目录中的 `previous_payroll.xlsx`；首次建立账本时则保留该 Excel 作为期初历史数据。
+
+指定真实模板目录：
+
+```powershell
+python main.py --run-period-inputs "D:\PayrollFlow\monthly_input" --period 2026-11
+```
+
+### 审核和确认
+
+```powershell
+python main.py --history-list
+python main.py --history-show 2026-11
+python main.py --history-review 2026-11
+python main.py --history-confirm 2026-11
+```
+
+- 核算后先保持“草稿”，检查导出的工资表和异常报告。
+- 提交审核后状态变为“待审核”。
+- 确认后状态变为“已确认”，该期结果成为下一期历史数据来源。
+- 草稿/待审核可以重新核算；待审核期间重新核算后会退回草稿，要求重新检查。
+- 已确认期间拒绝普通重新核算。Python API 提供带原因的更正入口，并保留更正前快照；存在后续已确认期间时禁止直接更正早期期间。
+- 下一期只接受上一自然月的已确认记录；存在历史期间缺口或上期未确认时拒绝自动结转。
+- 新员工的累计初始值由规则配置 `history_carry_forward.new_employee_value` 明确指定。当前示例值 `0` 仅为模拟约定。
+
+默认数据库路径可通过 `--history-db` 指定。当前阶段提供 CLI 和业务 API，图形化界面属于下一阶段。

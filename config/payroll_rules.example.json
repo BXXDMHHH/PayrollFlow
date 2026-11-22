@@ -43,5 +43,16 @@
       ]
     }
   ],
-  "calculation_precision": 28
+  "calculation_precision": 28,
+  "history_carry_forward": {
+    "employee_key": "employee_id",
+    "description": "模拟累计奖金结转映射；仅用于测试历史期间衔接，不代表真实工资规则。",
+    "new_employee_value": "0",
+    "fields": [
+      {
+        "input_field": "bonus_accumulated_demo",
+        "result_field": "bonus_accumulated_next_demo"
+      }
+    ]
+  }
 }
