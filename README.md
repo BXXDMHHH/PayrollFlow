@@ -61,7 +61,7 @@ python main.py --calculate-samples --rules "config\my_demo_rules.json"
 
 每条规则通过 `code` 定义结果字段，通过 `inputs` 引用来源字段或其他规则的 `code`。引擎会校验未知引用、重复 code、无效运算类型和循环依赖，并按依赖顺序执行。不会执行 Python 表达式、eval 或动态代码。
 
-金额使用 Python `Decimal`；`decimal_places` 和 `rounding` 在 JSON 中配置。当前示例为 2 位小数和 `ROUND_HALF_UP`，每条规则的结果都会按配置舍入。每条规则均记录员工工号、规则名称、运算类型、输入值、舍入前结果和舍入后结果。
+金额使用 Python `Decimal`；`calculation_precision` 配置中间运算精度，`decimal_places` 和 `rounding` 配置结果精度与舍入方式。当前示例为 2 位小数和 `ROUND_HALF_UP`，每条规则的结果都会按配置舍入。每条规则均记录员工工号、规则名称、运算类型、输入值、舍入前结果和舍入后结果。
 
 当前模拟规则读取：
 - 固定收入：`base_salary_demo`

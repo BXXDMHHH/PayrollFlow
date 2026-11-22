@@ -20,6 +20,7 @@ from decimal import (
     ROUND_HALF_EVEN,
     ROUND_HALF_UP,
     ROUND_UP,
+    localcontext,
 )
 from pathlib import Path
 from typing import Any, Mapping
@@ -61,6 +62,7 @@ class CalculationTrace:
     rounded_result: str
     decimal_places: int
     rounding: str
+    calculation_precision: int
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -74,6 +76,7 @@ class CalculationResult:
     currency: str
     decimal_places: int
     rounding: str
+    calculation_precision: int
 
 
 def _read_config(config: Mapping[str, Any] | str | Path | None) -> dict[str, Any]:
@@ -109,6 +112,10 @@ def _topological_rules(config: Mapping[str, Any]) -> list[dict[str, Any]]:
     rounding = config.get("rounding")
     if rounding not in ROUNDING_MODES:
         raise RuleConfigError(f"不支持的舍入模式：{rounding!r}")
+
+    precision = config.get("calculation_precision", 28)
+    if isinstance(precision, bool) or not isinstance(precision, int) or not 16 <= precision <= 100:
+        raise RuleConfigError("calculation_precision 必须是 16 到 100 之间的整数")
 
     source_fields = config.get("source_fields")
     if not isinstance(source_fields, list) or not source_fields:
@@ -263,6 +270,7 @@ def calculate_payroll(
 
     places = rules_config["decimal_places"]
     rounding_name = rules_config["rounding"]
+    calculation_precision = rules_config.get("calculation_precision", 28)
     rounding_mode = ROUNDING_MODES[rounding_name]
     quantum = Decimal("1").scaleb(-places)
     output_rows: list[dict[str, Any]] = []
@@ -281,11 +289,13 @@ def calculate_payroll(
         for rule in rules_config["rules"]:
             code = rule["code"]
             values = [context[name] for name in rule["inputs"]]
-            raw_result = _operate(
-                rule["type"], values, employee_id=employee_id, rule_code=code
-            )
             try:
-                rounded_result = raw_result.quantize(quantum, rounding=rounding_mode)
+                with localcontext() as decimal_context:
+                    decimal_context.prec = calculation_precision
+                    raw_result = _operate(
+                        rule["type"], values, employee_id=employee_id, rule_code=code
+                    )
+                    rounded_result = raw_result.quantize(quantum, rounding=rounding_mode)
             except InvalidOperation as exc:
                 raise CalculationInputError(
                     f"员工 {employee_id} 的规则 {code} 无法按配置精度舍入"
@@ -302,6 +312,7 @@ def calculate_payroll(
                 rounded_result=str(rounded_result),
                 decimal_places=places,
                 rounding=rounding_name,
+                calculation_precision=calculation_precision,
             ))
         output_rows.append(output)
 
@@ -312,4 +323,5 @@ def calculate_payroll(
         currency=str(rules_config.get("currency", "UNSPECIFIED")),
         decimal_places=places,
         rounding=rounding_name,
+        calculation_precision=calculation_precision,
     )

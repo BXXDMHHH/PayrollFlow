@@ -42,5 +42,6 @@
         "bonus_demo"
       ]
     }
-  ]
+  ],
+  "calculation_precision": 28
 }
