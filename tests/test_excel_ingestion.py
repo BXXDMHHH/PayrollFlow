@@ -39,9 +39,9 @@ def test_all_four_workbooks_match_independent_expected_data(sample_dir: Path) ->
         {"employee_id": "PF003", "employee_name": "模拟员工丙", "department": "财务部", "base_salary_demo": Decimal("6500.0")},
     ]
     assert results["attendance"].data.to_dict("records") == [
-        {"employee_id": "PF001", "attendance_days_demo": 21, "absence_days_demo": 0},
-        {"employee_id": "PF002", "attendance_days_demo": 20, "absence_days_demo": 1},
-        {"employee_id": "PF003", "attendance_days_demo": 22, "absence_days_demo": 0},
+        {"employee_id": "PF001", "attendance_days_demo": 21, "absence_days_demo": 0, "deduction_demo": Decimal("200.0")},
+        {"employee_id": "PF002", "attendance_days_demo": 20, "absence_days_demo": 1, "deduction_demo": Decimal("0.0")},
+        {"employee_id": "PF003", "attendance_days_demo": 22, "absence_days_demo": 0, "deduction_demo": Decimal("100.0")},
     ]
     assert results["bonus"].data.to_dict("records") == [
         {"employee_id": "PF001", "bonus_demo": Decimal("500.0"), "allowance_demo": Decimal("100.0")},

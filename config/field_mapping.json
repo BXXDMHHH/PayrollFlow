@@ -25,12 +25,14 @@
       "columns": {
         "工号": "employee_id",
         "出勤天数（模拟）": "attendance_days_demo",
-        "缺勤天数（模拟）": "absence_days_demo"
+        "缺勤天数（模拟）": "absence_days_demo",
+        "扣款（模拟）": "deduction_demo"
       },
       "field_types": {
         "employee_id": "string",
         "attendance_days_demo": "integer",
-        "absence_days_demo": "integer"
+        "absence_days_demo": "integer",
+        "deduction_demo": "decimal"
       }
     },
     "bonus": {
@@ -70,7 +72,8 @@
       "attendance": [
         "employee_id",
         "attendance_days_demo",
-        "absence_days_demo"
+        "absence_days_demo",
+        "deduction_demo"
       ],
       "bonus": [
         "employee_id",

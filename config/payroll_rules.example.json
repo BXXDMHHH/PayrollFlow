@@ -1,9 +1,46 @@
 {
-  "version": "demo-only-0.1.0",
+  "version": "demo-only-0.2.0",
   "status": "SIMULATION_ONLY_NOT_FOR_REAL_PAYROLL",
-  "warning": "以下仅为阶段 0 的配置结构占位，不实现也不代表真实工资公式。正式规则必须由会计/业务负责人确认。",
+  "warning": "仅用于验证计算引擎。工资项目、输入值、公式、精度和舍入方式均为模拟约定，不代表任何企业真实工资制度。真实使用前必须由会计/业务负责人确认并建立独立规则版本。",
   "currency": "CNY_DEMO",
+  "employee_key": "employee_id",
   "decimal_places": 2,
-  "rounding": "ROUND_HALF_UP_DEMO",
-  "rules": []
+  "rounding": "ROUND_HALF_UP",
+  "source_fields": [
+    "base_salary_demo",
+    "bonus_demo",
+    "allowance_demo",
+    "deduction_demo",
+    "bonus_accumulated_demo"
+  ],
+  "rules": [
+    {
+      "code": "total_income_demo",
+      "name": "模拟收入合计",
+      "type": "sum",
+      "inputs": [
+        "base_salary_demo",
+        "bonus_demo",
+        "allowance_demo"
+      ]
+    },
+    {
+      "code": "payroll_result_demo",
+      "name": "模拟核算结果（收入合计减测试扣款）",
+      "type": "subtract",
+      "inputs": [
+        "total_income_demo",
+        "deduction_demo"
+      ]
+    },
+    {
+      "code": "bonus_accumulated_next_demo",
+      "name": "模拟累计奖金结转值",
+      "type": "sum",
+      "inputs": [
+        "bonus_accumulated_demo",
+        "bonus_demo"
+      ]
+    }
+  ]
 }
