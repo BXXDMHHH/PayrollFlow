@@ -43,23 +43,23 @@ STANDARD_WORKBOOKS = {
 }
 
 
-def generate_sample_workbooks(output_dir: Path = SAMPLE_DATA_DIR) -> list[Path]:
-    """Create four clean demo workbooks and one edge-case workbook.
-
-    Every person, identifier and amount in these files is fictional. The
-    generated files are local artifacts and should not be committed.
-    """
-    standard_dir = output_dir / "standard"
-    edge_dir = output_dir / "edge_cases"
-    standard_dir.mkdir(parents=True, exist_ok=True)
-    edge_dir.mkdir(parents=True, exist_ok=True)
-
-    generated: list[Path] = []
-    for filename, (sheet_name, rows) in STANDARD_WORKBOOKS.items():
-        path = standard_dir / filename
+def _write_workbooks(directory: Path, workbooks: dict[str, tuple[str, list[dict]]]) -> list[Path]:
+    directory.mkdir(parents=True, exist_ok=True)
+    generated = []
+    for filename, (sheet_name, rows) in workbooks.items():
+        path = directory / filename
         pd.DataFrame(rows).to_excel(path, index=False, sheet_name=sheet_name)
         generated.append(path)
+    return generated
 
+
+def generate_sample_workbooks(output_dir: Path = SAMPLE_DATA_DIR) -> list[Path]:
+    """Create four clean demo workbooks and one legacy data-quality workbook."""
+    standard_dir = output_dir / "standard"
+    generated = _write_workbooks(standard_dir, STANDARD_WORKBOOKS)
+
+    edge_dir = output_dir / "edge_cases"
+    edge_dir.mkdir(parents=True, exist_ok=True)
     edge_path = edge_dir / "data_quality_cases.xlsx"
     edge_rows = [
         {"场景": "重复工号", "工号": "PF001", "金额字段（测试）": "100.00", "说明": "与另一条 PF001 记录重复"},
@@ -71,4 +71,26 @@ def generate_sample_workbooks(output_dir: Path = SAMPLE_DATA_DIR) -> list[Path]:
     ]
     pd.DataFrame(edge_rows).to_excel(edge_path, index=False, sheet_name="数据质量场景")
     generated.append(edge_path)
+    generated.extend(generate_validation_workbooks(output_dir))
     return generated
+
+
+def generate_validation_workbooks(output_dir: Path = SAMPLE_DATA_DIR) -> list[Path]:
+    """Create four related workbooks with duplicate, unknown, blank and missing attendance cases."""
+    directory = output_dir / "validation_cases"
+    validation_workbooks = {
+        "employees.xlsx": STANDARD_WORKBOOKS["employees.xlsx"],
+        "attendance.xlsx": (
+            "考勤",
+            [
+                {"工号": "PF001", "出勤天数（模拟）": 21, "缺勤天数（模拟）": 0},
+                {"工号": "PF002", "出勤天数（模拟）": 20, "缺勤天数（模拟）": 1},
+                {"工号": "PF002", "出勤天数（模拟）": 19, "缺勤天数（模拟）": 2},
+                {"工号": "PF999", "出勤天数（模拟）": 20, "缺勤天数（模拟）": 0},
+                {"工号": None, "出勤天数（模拟）": 20, "缺勤天数（模拟）": 0},
+            ],
+        ),
+        "bonus.xlsx": STANDARD_WORKBOOKS["bonus.xlsx"],
+        "previous_payroll.xlsx": STANDARD_WORKBOOKS["previous_payroll.xlsx"],
+    }
+    return _write_workbooks(directory, validation_workbooks)

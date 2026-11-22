@@ -28,13 +28,15 @@ from payrollflow.paths import CONFIG_DIR
 
 @dataclass(frozen=True)
 class ImportResult:
-    """A standardized table and non-fatal row-cleaning statistics."""
+    """A standardized table and import diagnostics."""
 
     file_type: str
     source_path: Path
     worksheet: str
     data: pd.DataFrame
     dropped_blank_rows: int = 0
+    field_errors: tuple[dict[str, Any], ...] = ()
+    source_row_numbers: tuple[int, ...] = ()
 
     @property
     def row_count(self) -> int:
@@ -63,14 +65,14 @@ def _load_mapping(mapping: Mapping[str, Any] | Path | None) -> dict[str, Any]:
 
 
 def _clean_header(value: Any) -> str:
-    return re.sub(r"\s+", "", str(value)).strip()
+    return re.sub(r"\\s+", "", str(value)).strip()
 
 
 def _clean_identifier(value: Any) -> Any:
     if pd.isna(value):
         return pd.NA
     text = str(value).strip()
-    if re.fullmatch(r"\d+\.0", text):
+    if re.fullmatch(r"\\d+\\.0", text):
         text = text[:-2]
     return text if text else pd.NA
 
@@ -135,7 +137,13 @@ def _infer_type(standard_name: str) -> str:
 
 
 def _standardize_column(
-    series: pd.Series, *, standard_name: str, field_type: str, source_rows: list[int]
+    series: pd.Series,
+    *,
+    standard_name: str,
+    field_type: str,
+    source_rows: list[int],
+    file_type: str,
+    errors: list[dict[str, Any]] | None,
 ) -> pd.Series:
     converter = {
         "string": lambda value, row: _clean_identifier(value),
@@ -145,11 +153,22 @@ def _standardize_column(
     }.get(field_type)
     if converter is None:
         raise WorkbookReadError(f"字段“{standard_name}”配置了不支持的数据类型：{field_type}")
-    return pd.Series(
-        [converter(value, row) for value, row in zip(series.tolist(), source_rows)],
-        index=series.index,
-        dtype="object",
-    )
+
+    converted = []
+    for value, row_number in zip(series.tolist(), source_rows):
+        try:
+            converted.append(converter(value, row_number))
+        except InvalidFieldValueError as exc:
+            if errors is None:
+                raise
+            errors.append({
+                "file_type": file_type,
+                "field": standard_name,
+                "row_number": row_number,
+                "message": str(exc),
+            })
+            converted.append(pd.NA)
+    return pd.Series(converted, index=series.index, dtype="object")
 
 
 def load_excel_file(
@@ -157,8 +176,9 @@ def load_excel_file(
     file_type: str,
     *,
     mapping: Mapping[str, Any] | Path | None = None,
+    collect_errors: bool = False,
 ) -> ImportResult:
-    """Read one configured workbook and return its standardized DataFrame."""
+    """Read one workbook. collect_errors keeps invalid cells as NA for reporting."""
     path = Path(source_path)
     if not path.is_file():
         raise SourceFileNotFoundError(f"输入文件不存在：{path}")
@@ -179,6 +199,7 @@ def load_excel_file(
         raise WorkbookReadError(f"Excel 文件损坏或无法读取：{path.name}") from exc
 
     if worksheet not in workbook.sheet_names:
+        workbook.close()
         raise WorksheetNotFoundError(
             f"文件“{path.name}”中不存在工作表“{worksheet}”；实际工作表：{', '.join(workbook.sheet_names)}"
         )
@@ -186,10 +207,12 @@ def load_excel_file(
     try:
         raw = pd.read_excel(workbook, sheet_name=worksheet, dtype=object, engine="openpyxl")
     except Exception as exc:
+        workbook.close()
         raise WorkbookReadError(f"读取文件“{path.name}”的工作表“{worksheet}”失败") from exc
 
     cleaned_headers = [_clean_header(header) for header in raw.columns]
     if len(set(cleaned_headers)) != len(cleaned_headers):
+        workbook.close()
         raise WorkbookReadError(f"文件“{path.name}”存在清理空格后重名的列")
     raw.columns = cleaned_headers
 
@@ -198,6 +221,7 @@ def load_excel_file(
     required_clean = {_clean_header(name) for name in required}
     missing = sorted(required_clean - set(cleaned_headers))
     if missing:
+        workbook.close()
         raise MissingColumnsError(f"文件“{path.name}”缺少必要列：{', '.join(missing)}")
 
     selected = [name for name in source_to_standard if name in raw.columns]
@@ -209,14 +233,19 @@ def load_excel_file(
 
     result = pd.DataFrame(index=raw.index)
     field_types = file_config.get("field_types", {})
+    field_errors: list[dict[str, Any]] | None = [] if collect_errors else None
     for source_name in selected:
         standard_name = source_to_standard[source_name]
         field_type = field_types.get(standard_name, _infer_type(standard_name))
         if standard_name == config.get("employee_key", "employee_id"):
             field_type = "string"
         result[standard_name] = _standardize_column(
-            raw[source_name], standard_name=standard_name,
-            field_type=field_type, source_rows=source_rows,
+            raw[source_name],
+            standard_name=standard_name,
+            field_type=field_type,
+            source_rows=source_rows,
+            file_type=file_type,
+            errors=field_errors,
         )
 
     result.reset_index(drop=True, inplace=True)
@@ -227,6 +256,8 @@ def load_excel_file(
         worksheet=worksheet,
         data=result,
         dropped_blank_rows=dropped_blank_rows,
+        field_errors=tuple(field_errors or ()),
+        source_row_numbers=tuple(source_rows),
     )
 
 
@@ -234,6 +265,7 @@ def load_all_inputs(
     input_dir: str | Path,
     *,
     mapping: Mapping[str, Any] | Path | None = None,
+    collect_errors: bool = False,
 ) -> dict[str, ImportResult]:
     """Load all configured input workbooks from one directory."""
     config = _load_mapping(mapping)
@@ -243,6 +275,9 @@ def load_all_inputs(
         if not filename:
             raise WorkbookReadError(f"文件类型“{file_type}”未配置 example_filename")
         results[file_type] = load_excel_file(
-            Path(input_dir) / filename, file_type, mapping=config
+            Path(input_dir) / filename,
+            file_type,
+            mapping=config,
+            collect_errors=collect_errors,
         )
     return results

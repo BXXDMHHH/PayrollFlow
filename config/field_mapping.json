@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0-demo",
+  "version": "0.3.0-demo",
   "description": "字段映射示例；实际 Excel 模板和字段含义待业务方确认。",
   "employee_key": "employee_id",
   "files": {
@@ -58,6 +58,27 @@
         "employee_id": "string",
         "bonus_accumulated_demo": "decimal"
       }
+    }
+  },
+  "validation": {
+    "required_fields": {
+      "employees": ["employee_id", "employee_name", "base_salary_demo"],
+      "attendance": ["employee_id", "attendance_days_demo", "absence_days_demo"],
+      "bonus": ["employee_id", "bonus_demo", "allowance_demo"],
+      "previous_payroll": ["employee_id", "bonus_accumulated_demo"]
+    },
+    "unknown_employee_severity": {
+      "attendance": "blocking",
+      "bonus": "blocking",
+      "previous_payroll": "blocking"
+    },
+    "missing_employee_record_severity": {
+      "previous_payroll": "warning"
+    },
+    "missing_row_policy": {
+      "attendance": "blocking",
+      "bonus": "zero",
+      "previous_payroll": "warning"
     }
   }
 }
