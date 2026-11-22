@@ -2,17 +2,11 @@
 
 PayrollFlow 是一个面向中小企业、Windows 本地运行的工资核算自动化工具。V1.0 产品范围和验收标准见 PRD.md，AI 开发约束见 AGENTS.md。
 
-> 当前进度：阶段 0（项目工程基础）。本仓库当前只提供工程启动、配置检查、模拟 Excel 生成、日志和 pytest 基础设施；尚未实现 Excel 业务导入、工资计算、审核确认或工资表导出。请勿将当前版本用于真实工资核算或发薪。
+> 当前进度：阶段 1（Excel 数据接入）。程序可以按配置读取四类约定模板 Excel，并将字段标准化；尚未实现员工跨表关联、工资计算、审核确认或工资表导出。当前版本仅供模拟数据和开发验证，请勿用于真实工资核算或发薪。
 
-## 1. 环境要求
+## 环境与安装
 
-- Windows 10 / 11
-- Python 3.10 或更高版本（建议使用 Python 3.11）
-- PowerShell
-
-## 2. 首次安装（PowerShell）
-
-在仓库根目录执行：
+Windows 10 / 11，建议 Python 3.11。在 PowerShell 仓库根目录执行：
 
 ```powershell
 py -3.11 -m venv .venv
@@ -21,100 +15,72 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-如果 PowerShell 阻止激活脚本，可在当前终端临时执行：
+如果 PowerShell 阻止激活脚本，可在当前终端临时执行 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`。
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
-
-## 3. 检查工程是否可运行
+## 检查工程
 
 ```powershell
 python main.py --check
 ```
 
-预期看到 PayrollFlow 工程检查通过，并列出三个 JSON 配置文件。
-
-## 4. 生成模拟 Excel
+## 生成模拟 Excel
 
 ```powershell
 python scripts/generate_sample_data.py
 ```
 
-生成位置：
+生成 `data/sample/standard/` 下四类正常模板，以及 `data/sample/edge_cases/` 下的数据质量样例。所有姓名、工号和金额均为虚构数据；生成的 Excel 文件被 .gitignore 排除，不应提交到 Git。
 
-```text
-data/sample/
-├── standard/
-│   ├── employees.xlsx
-│   ├── attendance.xlsx
-│   ├── bonus.xlsx
-│   └── previous_payroll.xlsx
-└── edge_cases/
-    └── data_quality_cases.xlsx
-```
+## 读取四类 Excel
 
-standard 中的四份工作簿用于后续阶段的正常流程开发；edge_cases 用于后续异常识别测试，覆盖重复工号、空工号、无法匹配、格式错误和缺失字段等情况。所有姓名、工号和金额均为虚构数据。生成的 Excel 文件保存在本机并由 .gitignore 排除，不应提交到 Git。
-
-## 5. 启动最小入口
-
-命令行入口：
+读取模拟数据：
 
 ```powershell
-python main.py
+python main.py --read-samples
 ```
 
-本地 Streamlit 工程验证界面：
+读取会计提供的文件目录：
 
 ```powershell
-streamlit run app.py
+python main.py --read-inputs "D:\PayrollFlow\monthly_input"
 ```
 
-Streamlit 启动后会在终端显示本地访问地址，通常为 http://localhost:8501。当前界面只是工程基础状态页，不代表工资核算功能已经完成。
+指定目录需包含 `employees.xlsx`、`attendance.xlsx`、`bonus.xlsx`、`previous_payroll.xlsx`。工作表、来源列名、标准字段名和类型由 `config/field_mapping.json` 控制。
 
-## 6. 运行测试
+支持的数据类型：
+
+- `string`：去除前后空格；工号按字符串保存，避免字符串工号的前导零丢失。
+- `integer`：考勤天数等整数，小数不会被静默截断。
+- `decimal`：金额使用 Python `Decimal`，支持千分位逗号、人民币符号及“元”后缀，不使用二进制浮点数作为标准金额。
+- `date`：转换为 Python `date`。当前四类模拟模板没有日期列；新增日期字段时，在对应映射的 `field_types` 中声明 `date`。
+
+读取器清理列名和文本前后空格、跳过整行空白记录。缺少文件、损坏文件、工作表不存在、必要列缺失、非法金额/日期/整数均会产生可读异常，不会静默变成 0。读取过程不回写源 Excel。
+
+Python 接口：
+
+- `load_excel_file(path, file_type)`：读取单个工作簿。
+- `load_all_inputs(directory)`：按配置读取四类工作簿。
+- 返回 `ImportResult`，包含标准化 Pandas DataFrame、来源路径、工作表名、记录数和跳过的空白行数。
+
+## 测试
 
 ```powershell
 pytest
 ```
 
-阶段 0 测试覆盖配置文件可读取、模拟工资规则明确标注为仅供演示，以及模拟 Excel 生成结果和异常样例类别。
+测试通过独立预期值校验四类 Excel 的行数、工号、姓名、工资金额、考勤数据和累计数据，并覆盖文件不存在、Excel 损坏、工作表不存在、缺少必要列、非法金额、非法日期、非法整数、空白行、多余空格及原始文件哈希不变。
 
-## 7. 当前目录结构
+## 当前最小界面
 
-```text
-PayrollFlow/
-├── app.py                         # Streamlit 最小启动页
-├── main.py                        # 命令行工程检查入口
-├── requirements.txt
-├── pytest.ini
-├── config/                         # 运行参数、字段映射、演示规则结构
-├── data/sample/                    # 本地生成的模拟数据（Excel 不入库）
-├── scripts/generate_sample_data.py # 模拟 Excel 生成脚本
-├── src/payrollflow/                # 配置、路径、异常、日志和模拟数据
-├── tests/                          # 阶段 0 自动化测试
-├── output/                         # 运行时创建，内容不入库
-├── README.md
-├── PRD.md
-└── AGENTS.md
+```powershell
+streamlit run app.py
 ```
 
-后续阶段再按实际业务需要逐步增加 ingestion、processing、calculation、validation、history 和 export 模块；阶段 0 不创建空业务模块，也不提前引入 SQLite。
+当前 Streamlit 页面仍是工程状态页，尚未提供会计导入交互界面；完整 UI 属于后续阶段。
 
-## 8. 数据安全约定
+## 数据安全
 
 - 不要将真实员工信息、真实工资表、身份证号、银行卡号或联系方式放入模拟数据、测试或 Git。
-- data/input、data/history、data/database、output、logs 和本地数据库均属于运行数据，不应提交。
-- 原始工资 Excel 在后续实现中必须只读处理，不得被程序覆盖。
-- config/payroll_rules.example.json 是结构示例，不含任何可用于真实发薪的公式。
-
-## 9. 常见问题
-
-**提示 No module named ...**：确认已激活 .venv，然后重新执行 pip install -r requirements.txt。
-
-**找不到 py 命令**：从 python.org 安装 Python，并在安装时启用 PATH，或使用 python -m venv .venv 创建环境。
-
-**Streamlit 命令不可用**：确认虚拟环境已激活并成功安装依赖；也可执行 python -m streamlit run app.py。
-
-**Excel 文件没有出现在 Git 变更中**：这是预期行为。模拟 Excel 属于本地生成文件，已被 .gitignore 排除。
+- `data/input`、`data/history`、`data/database`、`output`、`logs` 和本地数据库均属于运行数据，不应提交。
+- 原始工资 Excel 只读处理；本阶段标准化结果只在内存中使用。
+- `config/payroll_rules.example.json` 仅为结构示例，不含可用于真实发薪的公式。
